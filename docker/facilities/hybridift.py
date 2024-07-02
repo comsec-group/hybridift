@@ -1,3 +1,8 @@
+# There is a few assumptions that might requiring checking when using this on new designs:
+# - All resets are active low
+
+# Non-labeled single-bit data memories are not yet supported
+
 from itertools import permutations, product, combinations
 import re
 import os
@@ -5,6 +10,10 @@ import subprocess
 from enum import Enum, auto
 import multiprocessing as mp
 import sys
+
+# Tolerate using the native reset instead of a taint meta-reset. This might allow boosting the performance even beyond the results that we reported in the paper.
+TOLERATE_NATIVE_RST = True
+NATIVE_RST_SIGNAL_SUBSTR = "rst" # We identify the reset signal by name.
 
 tmp_dir_path = "tmp"
 os.makedirs(tmp_dir_path, exist_ok=True)
@@ -31,7 +40,7 @@ CELLIFT_NOINSTRUMENT_ATTR = "cellift_noinstrument"
 # MODULE_NAME = "rocket_tag_array"
 # MODULE_NAME = "rocket_data_arrays_0"
 # MODULE_NAME = "rocket_data_arrays_0_0"
-MODULE_NAME = "boom_split_array_0_0"
+# MODULE_NAME = "boom_split_array_0_0"
 
 # For the widths of the signals, we rely on the post-yosys vanilla, where parameters are well-known.
 
@@ -149,8 +158,9 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
         assert len(clock_signals) >= 1, f"There is expected to be at least one clock signal. Got {len(clock_signals)}: {clock_signals}"
 
         if len(clock_signals) > 1:
-            print(f"TODO: Add assertion into the design to ensure that all clocks are connected.")
+            print(f"WARNING: ensure that all clocks are connected. Otherwise, multiple independent clocks are not supported at the moment.")
 
+        # Is this comment outdated?
         # CellIFT makes all resets synchronous due to legacy tool limitations.
         # We identify the reset signal as a signal that looks like:
         # always_ff @(posedge Clk_CI)
@@ -184,7 +194,7 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
                 if TAINT_META_RESET_PORT_NAME_PREFIX in line:
                     continue
 
-                signal = re.search(r"input\s*(\[.*\])?\s*(\w+)", line)
+                signal = re.search(r"input\s*(?:wire|reg|logic)?\s*(\[.*\])?\s*(\w+)", line)
                 # Exclude clock and reset signals
                 if signal.group(2) in clock_signals or signal.group(2) == reset_signal:
                     continue
@@ -196,13 +206,18 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
                 input_signals.append((signal.group(2), width))
 
             if "output" in line:
-                signal = re.search(r"output\s*(\[.*\])?\s*(\w+)", line)
-                if signal.group(1) is None:
-                    width = 1
-                else:
-                    # signal.group(1) is like "[7:0]"
-                    width = int(signal.group(1).split(":")[0][1:]) - int(signal.group(1).split(":")[1][:-1]) + 1
-                output_signals.append((signal.group(2), width))
+                signal = re.search(r"^\s*output\s*(?:wire|reg|logic)?\s*(\[.*\])?\s*(\w+)", line)
+                if signal:
+                    if signal.group(1) is None:
+                        # Print all groups
+                        print(f"Groups: {signal.groups()}")
+                        print(f"Width is single bit for line: {line}")
+                        width = 1
+                    else:
+                        # signal.group(1) is like "[7:0]"
+                        width = int(signal.group(1).split(":")[0][1:]) - int(signal.group(1).split(":")[1][:-1]) + 1
+                        print(f"Width is {width} for line: {line}")
+                    output_signals.append((signal.group(2), width))
 
         assert len(output_signals) == 1, "There is expected to be exactly one output signal"
         output_signal = output_signals.pop()
@@ -222,11 +237,6 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
     output_data_signal_and_width = signal_dict["output_signal_and_width"]
     data_width = output_data_signal_and_width[1]
 
-    # We ignore single-bit data memories for now.
-    if data_width == 1:
-        print("TODO: Ignoring single-bit data memories for now.")
-        return None
-
     # # assert data_width % 8 == 0, f"The data width is expected to be a multiple of 8, but it is {data_width}"
     # assert data_width >= 8, f"The data width is expected to be larger than 8, but it is {data_width} for module {module_name}"
 
@@ -236,12 +246,15 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
         found_bracket_line_id = None
         for line_id in range(len(module_content_post_yosys_lines_incl_functions)):
             line = module_content_post_yosys_lines_incl_functions[line_id]
-            if "] <= " in line:
+            if re.search(r"\]\s*<=\s*[a-zA-Z]", line):
+                print(f"Found bracket line: {line}")
                 found_bracket_line_id = line_id
                 break
         if found_bracket_line_id is None:
             return None
-        
+
+        print(f"module_content_post_yosys_lines_incl_functions[found_bracket_line_id]: {module_content_post_yosys_lines_incl_functions[found_bracket_line_id]}")
+
         # Example: ] <= _01_;
         interm_signal_name = re.search(r"\] <= (\w+);", module_content_post_yosys_lines_incl_functions[found_bracket_line_id]).group(1)
         assert interm_signal_name.startswith("_"), f"The intermediate signal name should start with an underscore, but it is {interm_signal_name}"
@@ -254,7 +267,7 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
                 break
         if assign_line is None:
             return None
-        
+
         # Example: assign _01_ = _02_ ? W0_data : 1'hx;
         other_name = re.search(r"assign " + interm_signal_name + r" = (?:\w+) \? (\w+) : \d+'hx;", assign_line)
         if other_name is None:
@@ -272,7 +285,11 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
     if len([signal for signal in input_signals_and_widths_except_clocks if signal[1] == data_width]) == 1:
         input_data_signal = [signal for signal in input_signals_and_widths_except_clocks if signal[1] == data_width][0][0]
     else:
+        print("TODO Warning: The input data signal is not obvious by width. Using a heuristic.")
         input_data_signal = __heuristic_find_input_signal_if_not_obvious_by_width(module_content_post_yosys_lines_incl_functions, [signal[0] for signal in input_signals_and_widths_except_clocks])
+        if input_data_signal is None:
+            print(f"Heuristic input data detection failed for module. Assuming that this is not a memory module")
+            return None
         assert input_data_signal is not None, f"There should be exactly one input signal with the same width as the output signal in module {module_name}"
 
     input_signals_and_widths = list(filter(lambda signal: signal[0] != input_data_signal, input_signals_and_widths_except_clocks))
@@ -357,11 +374,11 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
     else:
         template_output_signal = f"{output_data_signal_and_width[0]}"
 
-    PATH_TO_MEMSHADE_DV = os.getenv("CELLIFT_PYTHON_COMMON")
-    assert PATH_TO_MEMSHADE_DV is not None, "The environment variable CELLIFT_PYTHON_COMMON should be set to the path of the MemShade-DV repository"
-    
+    PATH_TO_HYBRIDIFT_DV = os.getenv("CELLIFT_PYTHON_COMMON")
+    assert PATH_TO_HYBRIDIFT_DV is not None, "The environment variable CELLIFT_PYTHON_COMMON should be set to the path of the hybriDIFT-DV repository"
+
     # Header file
-    with open(os.path.join(PATH_TO_MEMSHADE_DV, "..", "memshade_dv", "testbench_template.h"), "r") as f:
+    with open(os.path.join(PATH_TO_HYBRIDIFT_DV, "..", "hybridift_dv", "testbench_template.h"), "r") as f:
         template_content = f.read()
 
     assert "TEMPLATE_TOP_MODULE_NAME" in template_content, "The template should contain the string TEMPLATE_TOP_MODULE_NAME"
@@ -386,7 +403,7 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
 
     # C++ file
 
-    with open(os.path.join(PATH_TO_MEMSHADE_DV, "..", "memshade_dv", "toplevel_template.cc"), "r") as f:
+    with open(os.path.join(PATH_TO_HYBRIDIFT_DV, "..", "hybridift_dv", "toplevel_template.cc"), "r") as f:
         template_content = f.read()
 
     assert "TEMPLATE_FEED_INPUTS" in template_content, "The template should contain the string TEMPLATE_FEED_INPUTS"
@@ -495,7 +512,7 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
     def gen_input_sequence_assuming_roles(roles, input_signals_and_widths_except_clocks):
         print(f"Roles: {roles}")
         print(f"Input signals and widths except clocks: {input_signals_and_widths_except_clocks}")
-        
+
         # Check that the inputs are correct
         assert len(roles) == len(input_signals_and_widths_except_clocks), f"The number of roles {len(roles)} should be the same as the number of input signals {len(input_signals_and_widths_except_clocks)}"
 
@@ -683,7 +700,7 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
     if len(candidate_roles_found_prefilter) == 2:
         indices_with_different_roles = [idx for idx in range(len(candidate_roles_found_prefilter[0])) if candidate_roles_found_prefilter[0][idx] != candidate_roles_found_prefilter[1][idx]]
         print(f"indices_with_different_roles: {indices_with_different_roles}, candidate_roles_found_prefilter[0]: {candidate_roles_found_prefilter[0][indices_with_different_roles[0]]}, candidate_roles_found_prefilter[1]: {candidate_roles_found_prefilter[1][indices_with_different_roles[0]]}")
- 
+
         if len(indices_with_different_roles) == 2:
             if (candidate_roles_found_prefilter[0][indices_with_different_roles[0]] == PortRole.WRITE_ENABLE and candidate_roles_found_prefilter[1][indices_with_different_roles[0]] == PortRole.WRITE_MASK) or (candidate_roles_found_prefilter[0][indices_with_different_roles[0]] == PortRole.WRITE_MASK and candidate_roles_found_prefilter[1][indices_with_different_roles[0]] == PortRole.WRITE_ENABLE):
                 print("Arbitration B")
@@ -1039,8 +1056,11 @@ def __find_metareset_name(module_content_lines):
     ret = None
     for line in module_content_lines:
         if f"input {TAINT_META_RESET_PORT_NAME_PREFIX}" in line:
-            assert ret is None, "There should be only one line inputting the metareset signal"
             ret = ''.join(line.split()[1:]).replace(';', '')
+            break
+        elif TOLERATE_NATIVE_RST and f"input" in line and NATIVE_RST_SIGNAL_SUBSTR in line.lower():
+            ret = ''.join(line.split()[1:]).replace(';', '')
+            break
 
     assert ret is not None, f"Could not find the metareset signal. Make sure that the metareset has been included, and that the prefix `{TAINT_META_RESET_PORT_NAME_PREFIX}` is correct."
     return ret
@@ -1049,7 +1069,7 @@ def instrument_sram(module_name: str, module_lines: list):
     metareset_name = __find_metareset_name(module_lines)
 
     analysis_ret = __analyze_sram_roles_and_latency(module_name, module_lines)
-    # In case we do not memshade-instrument it, for example for now, if this is a single-bit-data memory
+    # In case we do not hybriDIFT-instrument it, for example for now, if this is a single-bit-data memory
     if analysis_ret is None:
         return module_lines
 
@@ -1115,14 +1135,14 @@ def instrument_sram(module_name: str, module_lines: list):
 # Find the memories and instrument them one by one
 #######################
 
-# A module is a substring that starts with "\n\nmodule " and ends with "\nendmodule\n"
+# A module is a substring that starts with "\nmodule " and ends with "\nendmodule\n"
 # Returns a list of module contents
 def __list_module_contents(sv_content):
     module_contents = []
     module_contents_incl_functions = []
     start_idx = 0
     while True:
-        start_idx = sv_content.find("\n\nmodule ", start_idx)
+        start_idx = sv_content.find("\nmodule ", start_idx)
         if start_idx == -1:
             break
         end_idx = sv_content.find("\nendmodule\n", start_idx)
@@ -1250,11 +1270,10 @@ def instrument_all_memories_in_design(sv_content):
     for candidate_memory_module_id in candidate_memory_module_ids:
         print(f"Candidate memory module: {all_module_names[candidate_memory_module_id]}")
 
-    # TODO multiprocessing
+    # FUTURE TODO: Potentially do some multiprocessing here
     for candidate_memory_module_id in candidate_memory_module_ids:
         mem_module_lines = __module_instrumentation_worker(all_module_names[candidate_memory_module_id], all_module_contents_incl_functions[candidate_memory_module_id])
         sv_content = sv_content.replace(all_module_contents_incl_functions[candidate_memory_module_id], mem_module_lines)
-
 
     # For all candidate memory module ids, instrument them
     return sv_content
@@ -1265,7 +1284,7 @@ if __name__ == '__main__':
     output_sv_path = sys.argv[2]
 
     with open(input_sv_path, "r") as f:
-        sv_content = f.read()
+        sv_content = '\n\n'+f.read()
 
     sv_content = instrument_all_memories_in_design(sv_content)
 

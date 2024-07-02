@@ -96,9 +96,9 @@ RUN bash -c "source /cellift-meta/env.sh && mkdir -p /riscv-isa-sim/build && cd 
 # COPY facilities/chipyard/chipyard.tgz /facilities/chipyard.tgz
 # # Untar chipyard
 # RUN tar -xzf facilities/chipyard.tgz -C /facilities
-# RUN bash -c "cp -r /facilities/cellift-rocket /hybridift-chipyard" 
-# RUN bash -c "cp -r /facilities/cellift-boom   /hybridift-chipyard" 
-# RUN bash -c "cp -r /facilities/cellift-common /hybridift-chipyard" 
+# RUN bash -c "cp -r /facilities/cellift-rocket /hybridift-chipyard"
+# RUN bash -c "cp -r /facilities/cellift-boom   /hybridift-chipyard"
+# RUN bash -c "cp -r /facilities/cellift-common /hybridift-chipyard"
 # RUN cp facilities/BoomConfigs.scala /hybridift-chipyard/generators/chipyard/src/main/scala/config/BoomConfigs.scala
 
 # RUN touch /cellift-meta/design-processing/common/modelsim.mk
@@ -149,9 +149,31 @@ RUN bash -c "source /cellift-meta/env.sh && cd /openc910/our && make generated/o
 # Finally, CVA6 CellIFT
 ############################
 
+# In a later stage, merge this with the vanilla build. This is because we changed bender.yml upstream
+RUN bash -c "source /cellift-meta/env.sh && rm -rf /cellift-cva6"
+RUN git clone https://github.com/comsec-group/cellift-cva6.git
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-cva6/cellift/ && make generated/out/vanilla.sv"
 RUN bash -c "source /cellift-meta/env.sh && cd /cellift-cva6/cellift/ && make generated/out/cellift.sv"
 
 ############################
-# Now, integrate the memory identification tool
+# Do the passthroughs for HybriDIFT
 ############################
 
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-cva6/cellift/ && make generated/out/passthrough.sv"
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-chipyard/cellift-rocket/ && make generated/out/passthrough.sv"
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-chipyard/cellift-boom/ && make generated/out/passthrough.sv"
+
+RUN bash -c "sed -i 's/yosys list_state_elements/ yosys timestamp list_state_elements_dummy/g' /cellift-meta/design-processing/common/yosys/instrument.ys.tcl"
+RUN bash -c "source /cellift-meta/env.sh && cd /openc910/our && make generated/passthrough_precompact.sv"
+
+############################
+# HybriDIFT
+############################
+
+# Create the template files
+COPY facilities/hybridift_dv/testbench_template.h /cellift-meta/design-processing/common/hybridift_dv/testbench_template.h
+COPY facilities/hybridift_dv/toplevel_template.cc /cellift-meta/design-processing/common/hybridift_dv/toplevel_template.cc
+
+COPY facilities/hybridift.py /hybridift.py
+# Start with CVA6
+RUN bash -c "source /cellift-meta/env.sh && python3 /hybridift.py /cellift-cva6/cellift/generated/out/passthrough.sv /cellift-cva6/cellift/generated/hybridift.sv"; echo hi
