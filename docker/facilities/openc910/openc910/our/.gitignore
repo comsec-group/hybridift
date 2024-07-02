@@ -1,0 +1,8 @@
+work
+transcript
+*.wlf
+fusesoc.conf
+generated
+build
+*.lock
+*.log
