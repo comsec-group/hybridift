@@ -833,16 +833,16 @@ def __do_instrument_memory_explicit(role_dict, clock_signal, metareset_name):
 def __gen_is_bit_tainted_expr(anded_signal_names: list):
     assert len(anded_signal_names) > 0, "The list of anded signal names should not be empty"
 
-    expr_items = []
-    for signal_id, signal_name in enumerate(anded_signal_names):
-        expr_subitems = []
-        for other_signal_id, other_signal_name in enumerate(anded_signal_names):
-            expr_subitems.append(f"{__signal_to_taint_signal_name(signal_name)}")
-            if signal_id == other_signal_id:
-                continue
-            expr_subitems.append(f"({signal_name} | {__signal_to_taint_signal_name(signal_name)})")
-        expr_items.append(f"({' & '.join(expr_subitems)})")
-    return f"({' | '.join(expr_items)})"
+
+    if len(anded_signal_names) == 1:
+        return f"{__signal_to_taint_signal_name(anded_signal_names[0])}"
+
+    else:
+        tainted_sub_expr = __gen_is_bit_tainted_expr(anded_signal_names[1:])
+        anded_subexpr = '&'.join(anded_signal_names[1:])
+        tainted_first_signal = __signal_to_taint_signal_name(anded_signal_names[0])
+
+        return f"({anded_signal_names[0]}) & ({tainted_sub_expr}) | ({tainted_first_signal}) & ({anded_subexpr}) | ({tainted_first_signal}) & ({tainted_sub_expr})"
 
 def __do_instrument_memory_implicit(role_dict, clock_signal, metareset_name):
     # First, add the taint memory
@@ -900,8 +900,8 @@ def __do_instrument_memory_implicit(role_dict, clock_signal, metareset_name):
     if PortRole.BYTE_ENABLE_SIGNAL in role_dict:
         new_lines.append(f"    logic {REDUCED_BYTE_ENABLE_SIGNAL_NAME};")
         new_lines.append(f"    logic {REDUCED_BYTE_ENABLE_SIGNAL_NAME_TAINT};")
-        new_lines.append(f"    assign my_reduced_byte_enabled = |{role_dict[PortRole.BYTE_ENABLE_SIGNAL][0]};")
-        new_lines.append(f"    assign my_reduced_byte_enabled = |{__signal_to_taint_signal_name(role_dict[PortRole.BYTE_ENABLE_SIGNAL][0])};")
+        new_lines.append(f"    assign {REDUCED_BYTE_ENABLE_SIGNAL_NAME} = |{role_dict[PortRole.BYTE_ENABLE_SIGNAL][0]};")
+        new_lines.append(f"    assign {REDUCED_BYTE_ENABLE_SIGNAL_NAME_TAINT} = |{__signal_to_taint_signal_name(role_dict[PortRole.BYTE_ENABLE_SIGNAL][0])};")
 
     if PortRole.WRITE_ENABLE not in role_dict:
         if PortRole.WRITE_MASK not in role_dict:
