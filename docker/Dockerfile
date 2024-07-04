@@ -48,7 +48,7 @@ RUN echo "export CELLIFT_JOBS=220" >> /cellift-meta/env.sh
 # gtkwave
 RUN apt-get install gtkwave
 
-# Verilator 5.023 as said in the paper
+# Verilator 5.023 as said in the paper TODO Do the tag checkout also, else there will be internal errors in Verilator.
 RUN bash -c "unset VERILATOR_ROOT && source /cellift-meta/env.sh && git clone https://github.com/verilator/verilator.git"
 RUN bash -c "unset VERILATOR_ROOT && source /cellift-meta/env.sh && cd /verilator && autoconf"
 RUN bash -c "unset VERILATOR_ROOT && source /cellift-meta/env.sh && cd /verilator && ./configure"
@@ -176,4 +176,63 @@ COPY facilities/hybridift_dv/toplevel_template.cc /cellift-meta/design-processin
 
 COPY facilities/hybridift.py /hybridift.py
 # Start with CVA6
-RUN bash -c "source /cellift-meta/env.sh && python3 /hybridift.py /cellift-cva6/cellift/generated/out/passthrough.sv /cellift-cva6/cellift/generated/hybridift.sv"; echo hi
+# First, pre-instrument the memories
+RUN bash -c "source /cellift-meta/env.sh && python3 /hybridift.py /cellift-cva6/cellift/generated/out/passthrough.sv /cellift-cva6/cellift/generated/hybridift_interm.sv"
+# Imprecise shr sshr
+COPY facilities/yosys/instrument.ys.tcl /cellift-meta/design-processing/common/yosys/instrument.ys.tcl
+
+# Then, instrument the rest of the design
+RUN bash -c "DECOMPOSE_MEMORY=1 VERILOG_INPUT=/cellift-cva6/cellift/generated/hybridift_interm.sv INSTRUMENTATION=cellift VERILOG_OUTPUT=/cellift-cva6/cellift/generated/out/hybridift.sv TOP_MODULE=ariane_mem_top yosys -c /cellift-meta/design-processing/common/yosys/instrument.ys.tcl -l /cellift-cva6/cellift/generated/out/hybridift.log"
+
+# Some processing
+RUN bash -c "mv /cellift-cva6/cellift/generated/out/hybridift.sv /cellift-cva6/cellift/generated/hybridift_precompact.sv"
+COPY facilities/cellift-meta/concatbitwidth.py /cellift-meta/design-processing/common/python_scripts/concatbitwidth.py
+RUN sed 's/\$func\$\/cellift-cva6\/cellift\/generated\/hybridift_interm.sv/mypath/g' /cellift-cva6/cellift/generated/hybridift_precompact.sv > /cellift-cva6/cellift/generated/interm.sv
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-cva6/cellift/ && python3 /cellift-meta/design-processing/common/python_scripts/expand_left_operand.py generated/interm.sv generated/interm.sv"
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-cva6/cellift/ && python3 /cellift-meta/design-processing/common/python_scripts/expand_right_operand.py generated/interm.sv generated/interm.sv"
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-cva6/cellift/ && python3 /cellift-meta/design-processing/common/python_scripts/compress_concats.py generated/interm.sv generated/interm.sv"
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-cva6/cellift/ && python3 /cellift-meta/design-processing/common/python_scripts/divide_concat_into_subconcats.py generated/interm.sv generated/interm.sv"
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-cva6/cellift/ && python3 /cellift-meta/design-processing/common/python_scripts/correct_too_wide_lvalues.py generated/interm.sv generated/interm.sv"
+# RUN bash -c "source /cellift-meta/env.sh && cd /cellift-cva6/cellift/ && python3 /cellift-meta/design-processing/common/python_scripts/remove_clkt0.py generated/interm.sv generated/interm.sv"
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-cva6/cellift/ && sed 's/assign xx_intc_vld/\/\/assign xx_intc_vld/g' generated/interm.sv > generated/out/hybridift.sv"
+
+# Verilator 5.023 as said in the paper
+RUN rm -rf /verilator
+RUN bash -c "unset VERILATOR_ROOT && source /cellift-meta/env.sh && git clone https://github.com/verilator/verilator.git"
+RUN bash -c "unset VERILATOR_ROOT && source /cellift-meta/env.sh && cd /verilator && git checkout v5.022"
+RUN bash -c "unset VERILATOR_ROOT && source /cellift-meta/env.sh && cd /verilator && autoconf"
+RUN bash -c "unset VERILATOR_ROOT && source /cellift-meta/env.sh && cd /verilator && ./configure"
+RUN bash -c "unset VERILATOR_ROOT && source /cellift-meta/env.sh && cd /verilator && make -j 220; echo ok"
+RUN apt-get install -y help2man
+RUN bash -c "unset VERILATOR_ROOT && source /cellift-meta/env.sh && cd /verilator && make install"
+
+COPY facilities/cva6/run_hybridift_notrace.core /cellift-cva6/cellift/run_hybridift_notrace.core
+COPY facilities/cva6/ift_sram_mem.sv /cellift-cva6/cellift/src/ift_sram_mem.sv
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-cva6/cellift/ && /root/.local/bin/fusesoc library add run_hybridift_notrace . && /root/.local/bin/fusesoc run --build run_hybridift_notrace"
+# This command below will naturally fail because a SIMSRAMELF argument must be provided (see CellIFT tooling). But it compiles and allows fast prototyping once compiling, which is the goal.
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-cva6/cellift/build/run_hybridift_notrace_0.1/default-verilator/ && SIMLEN=1000 ./Variane_tiny_soc; echo ok"
+
+# Openc910
+
+# Update the Yosys version
+RUN bash -c "source /cellift-meta/env.sh && git config --global user.email artifacts@hybridift.com && git config --global user.name HybriDIFT Artifacts"
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-yosys/ && git remote add github https://github.com/YosysHQ/yosys.git && git fetch github && git rebase yosys-0.39"
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-yosys/passes/cellift && find . -type f -exec sed -i 's/.database./.get_database()./g' {} + && find ../cmds -type f -exec sed -i 's/.database./.get_database()./g' {} +"
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-yosys/ && make config-gcc && make -j 220"
+
+# sed -i 's/.database./.get_database()./g' passes/cellift/cellift.cc && make -j 220"
+RUN bash -c "source /cellift-meta/env.sh && cd /openc910/our && cp generated/sv2v_out.v generated/sv2v_out_copy.v"
+COPY facilities/openc910/sram_mem_blackbox.sv /openc910/sram_mem_blackbox.sv
+RUN bash -c "source /cellift-meta/env.sh && cd /openc910/our && cat /openc910/sram_mem_blackbox.sv >> generated/sv2v_out.v"
+
+COPY facilities/openc910/Makefile /openc910/our/Makefile
+COPY facilities/yosys/passthrough_metareset.ys.tcl /cellift-meta/design-processing/common/yosys/
+
+# Add yosys metareset
+COPY facilities/yosys/meta_reset.cc /cellift-yosys/passes/cmds/meta_reset.cc
+RUN bash -c "source /cellift-meta/env.sh && echo 'OBJS += passes/cmds/meta_reset.o' >> /cellift-yosys/passes/cmds/Makefile.inc"
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-yosys/ && make -j 220"
+
+RUN bash -c "source /cellift-meta/env.sh && cd /openc910/our && make generated/passthrough_precompact.sv"
+
+# RUN bash -c "source /cellift-meta/env.sh && python3 /hybridift.py /openc910/our/generated/passthrough_precompact.sv /openc910/our/generated/hybridift_interm.sv"

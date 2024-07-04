@@ -1022,7 +1022,7 @@ def __do_instrument_memory_implicit(role_dict, clock_signal, metareset_name):
 
     # Summarize the implicit taints
     new_lines.append(f"    logic implicit_taint;")
-    new_lines.append(f"    assign implicit_taint = permanent_taint_q | is_read_temporary_taint;")
+    new_lines.append(f"    assign implicit_taint = permanent_taint_q | is_read_temporary_taint_q;")
 
     return new_lines
 
