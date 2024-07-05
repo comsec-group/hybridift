@@ -263,6 +263,34 @@ RUN bash -c "source /cellift-meta/env.sh && cd /openc910/our/ && sed 's/assign x
 # Rebranding for release
 RUN bash -c "source /cellift-meta/env.sh && cd /openc910/our/ && sed 's/memshade/hybridift/g' Makefile"
 # FuseSoC
+COPY facilities/openc910/run_hybridift_notrace.core /openc910/our/run_hybridift_notrace.core
+# TODO Remove this eventually
+COPY facilities/openc910/replace_unwanted_t0s.py /replace_unwanted_t0s.py
+RUN bash -c "source /cellift-meta/env.sh && cd /openc910/our/ && python3 /replace_unwanted_t0s.py generated/out/hybridift.sv generated/out/hybridift.sv"
 RUN bash -c "source /cellift-meta/env.sh && cd /openc910/our/ && /root/.local/bin/fusesoc library add run_hybridift_notrace . && /root/.local/bin/fusesoc run --build run_hybridift_notrace"
 # This command below will naturally fail because a SIMSRAMELF argument must be provided (see CellIFT tooling). But it compiles and allows fast prototyping once compiling, which is the goal.
 RUN bash -c "source /cellift-meta/env.sh && cd /openc910/our/build/run_hybridift_notrace_0.1/default-verilator/ && SIMLEN=1000 ./Vopenc910_tiny_soc; echo ok"
+
+# Rocket and BOOM
+
+# Add metareset to Rocket and BOOM
+COPY facilities/rocket/cellift-common.mk /cellift-chipyard/cellift-common/cellift-common.mk
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-chipyard/cellift-rocket && make generated/out/passthrough_precompact.sv"
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-chipyard/cellift-boom && make generated/out/passthrough_precompact.sv"
+
+# TODO Commonalize: Update Yosys instrumentation to ignore clock and resets
+COPY facilities/yosys/instrument_2.ys.tcl /cellift-meta/design-processing/common/yosys/instrument.ys.tcl
+
+# Annotate
+COPY facilities/rocket/annotate_chipyard_mems.py /annotate_chipyard_mems.py
+RUN bash -c "source /cellift-meta/env.sh && python3 /annotate_chipyard_mems.py /cellift-chipyard/cellift-rocket/generated/out/passthrough_precompact.sv /cellift-chipyard/cellift-rocket/generated/passthrough_precompact_annotated.sv"
+RUN bash -c "source /cellift-meta/env.sh && python3 /annotate_chipyard_mems.py /cellift-chipyard/cellift-boom/generated/out/passthrough_precompact.sv /cellift-chipyard/cellift-boom/generated/passthrough_precompact_annotated.sv"
+
+# Hybridift-ize
+COPY facilities/hybridift_3.py /hybridift.py
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-chipyard/cellift-rocket && python3 /hybridift.py generated/out/passthrough_precompact.sv generated/hybridift_interm.sv --annotations && cd /cellift-chipyard/cellift-boom && python3 /hybridift.py generated/out/passthrough_precompact.sv generated/hybridift_interm.sv --annotations"
+
+
+RUN bash -c "source /cellift-meta/env.sh && echo coucou"
+
+
