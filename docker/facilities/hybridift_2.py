@@ -188,7 +188,7 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
                     while line_id < len(module_content_post_yosys_lines) and module_content_post_yosys_lines[line_id].lstrip().startswith("if (_"):
                         line_id += 1
 
-                    if line_id < len(module_content_post_yosys_lines) and module_content_post_yosys_lines[line_id].lstrip().startswith("if (!") and "<=" not in module_content_post_yosys_lines[line_id]:
+                    if line_id < len(module_content_post_yosys_lines) and module_content_post_yosys_lines[line_id].lstrip().startswith("if (!") and "rst" in module_content_post_yosys_lines[line_id].lower():
                         reset_signals.add(re.search(r"if \(!(\w+)\)", module_content_post_yosys_lines[line_id]).group(1))
 
         assert len(reset_signals) <= 1, "There is expected to be at most one reset signal"
@@ -688,9 +688,9 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
     print("candidate_roles_found_prefilter_selectors_and_latencies", candidate_roles_found_prefilter_selectors_and_latencies)
     candidate_roles_found_prefilter_selectors, candidate_roles_found_prefilter_selectors_secondary, candidate_roles_found_prefilter_selectors_and_latencies = zip(*candidate_roles_found_prefilter_selectors_and_latencies)
 
-    # If all primary selectors are None, then we can use the secondary selectors
-    if all([not selector for selector in candidate_roles_found_prefilter_selectors]):
-        candidate_roles_found_prefilter_selectors = candidate_roles_found_prefilter_selectors_secondary
+    # # If all primary selectors are None, then we can use the secondary selectors
+    # if all([not selector for selector in candidate_roles_found_prefilter_selectors]):
+    #     candidate_roles_found_prefilter_selectors = candidate_roles_found_prefilter_selectors_secondary
 
     print(f"candidate_roles_found_prefilter_selectors: {candidate_roles_found_prefilter_selectors}")
     for input_seq_id in range(len(all_input_seqs)):

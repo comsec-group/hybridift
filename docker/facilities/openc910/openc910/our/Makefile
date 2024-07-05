@@ -4,7 +4,7 @@
 
 PYTHON ?= python3
 
-TOP_MODULE =
+TOP_MODULE = openc910_mem_top
 TOP_SOC = openc910_tiny_soc
 TOP_EXECUTABLE_NAME = V$(TOP_SOC)
 TOP_FOR_INSTRUMENTATION = openc910_mem_top
@@ -47,10 +47,10 @@ generated/cellift_precompact.sv: $(CELLIFT_YS)/instrument.ys.tcl generated/sv2v_
 	DECOMPOSE_MEMORY=1 VERILOG_INPUT=$(word 2,$^) INSTRUMENTATION=cellift VERILOG_OUTPUT=$@ TOP_MODULE=$(TOP_FOR_INSTRUMENTATION) $(CELLIFT_META_ROOT)/resourcewrapper $(RESOURCEWRAPPER_TAG) cellift instr yosys -c $< -l $@.log
 	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/generated_cellift_precompact_end.txt
 
-generated/memshade_precompact.sv: $(CELLIFT_YS)/instrument.ys.tcl generated/sv2v_out_blackboxsrams.v | generated/out logs generated/timestamps
-	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/generated_memshade_precompact_start.txt
+generated/hybridift_precompact.sv: $(CELLIFT_YS)/instrument.ys.tcl generated/sv2v_out_blackboxsrams.v | generated/out logs generated/timestamps
+	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/generated_hybridift_precompact_start.txt
 	DECOMPOSE_MEMORY=1 VERILOG_INPUT=$(word 2,$^) INSTRUMENTATION=cellift VERILOG_OUTPUT=$@ TOP_MODULE=$(TOP_FOR_INSTRUMENTATION) $(CELLIFT_META_ROOT)/resourcewrapper $(RESOURCEWRAPPER_TAG) cellift instr yosys -c $< -l $@.log
-	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/generated_memshade_precompact_end.txt
+	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/generated_hybridift_precompact_end.txt
 
 generated/out/cellift.sv: generated/cellift_precompact.sv | generated/timestamps
 	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/generated_out_cellift_start.txt
@@ -62,8 +62,8 @@ generated/out/cellift.sv: generated/cellift_precompact.sv | generated/timestamps
 	sed 's/assign xx_intc_vld/\/\/assign xx_intc_vld/g' generated/interm.sv > $@
 	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/generated_out_cellift_end.txt
 
-generated/out/memshade.sv: generated/memshade_precompact.sv | generated/timestamps
-	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/generated_out_memshade_start.txt
+generated/out/hybridift.sv: generated/hybridift_precompact.sv | generated/timestamps
+	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/generated_out_hybridift_start.txt
 	$(PYTHON) $(CELLIFT_PYTHON_COMMON)/expand_left_operand.py $< generated/interm.sv
 	$(PYTHON) $(CELLIFT_PYTHON_COMMON)/expand_right_operand.py generated/interm.sv generated/interm.sv
 	$(PYTHON) $(CELLIFT_PYTHON_COMMON)/compress_concats.py generated/interm.sv generated/interm.sv
@@ -71,7 +71,7 @@ generated/out/memshade.sv: generated/memshade_precompact.sv | generated/timestam
 	$(PYTHON) $(CELLIFT_PYTHON_COMMON)/correct_too_wide_lvalues.py generated/interm.sv generated/interm.sv
 	$(PYTHON) $(CELLIFT_PYTHON_COMMON)/remove_clkt0.py generated/interm.sv generated/interm.sv
 	sed 's/assign xx_intc_vld/\/\/assign xx_intc_vld/g' generated/interm.sv > $@
-	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/generated_out_memshade_end.txt
+	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/generated_out_hybridift_end.txt
 
 # Black-box memory modules, instrumented separately
 tmp/all_blackbox.v: testinstr.py | tmp
@@ -108,7 +108,7 @@ generated/out/vanilla.sv: generated/openc910_pickled.sv | generated/out generate
 	$(PYTHON) $(CELLIFT_PYTHON_COMMON)/compress_concats.py generated/interm.sv $@
 	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/generated_out_vanilla_end.txt
 
-generated/passthrough_precompact.sv: $(CELLIFT_YS)/instrument.ys.tcl generated/sv2v_out.v | generated/out logs generated/timestamps
+generated/passthrough_precompact.sv: $(CELLIFT_YS)/passthrough_metareset.ys.tcl generated/sv2v_out.v | generated/out logs generated/timestamps
 	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/generated_passthrough_start.txt
 	DECOMPOSE_MEMORY=0 VERILOG_INPUT=$(word 2,$^) INSTRUMENTATION=vanilla VERILOG_OUTPUT=$@ TOP_MODULE=$(TOP_MODULE) yosys -DRANDOMIZE_MEM_INIT -DRANDOMIZE_REG_INIT -c $< -l $@.log
 	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/generated_passthrough_end.txt
@@ -226,13 +226,13 @@ run_cellift_notrace: generated/out/cellift.sv | generated/timestamps
 	fusesoc library add run_cellift_notrace .
 	fusesoc run --build run_cellift_notrace; echo Done
 	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/run_cellift_notrace_end.txt
-.PHONY: run_memshade_notrace
-run_memshade_notrace: generated/out/memshade.sv | generated/timestamps
-	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/run_memshade_notrace_start.txt
+.PHONY: run_hybridift_notrace
+run_hybridift_notrace: generated/out/hybridift.sv | generated/timestamps
+	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/run_hybridift_notrace_start.txt
 	rm -f fusesoc.conf
-	fusesoc library add run_memshade_notrace .
-	fusesoc run --build run_memshade_notrace; echo Done
-	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/run_memshade_notrace_end.txt
+	fusesoc library add run_hybridift_notrace .
+	fusesoc run --build run_hybridift_notrace; echo Done
+	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/run_hybridift_notrace_end.txt
 
 .PHONY: rerun_vanilla_notrace
 rerun_vanilla_notrace: | generated/timestamps
@@ -244,11 +244,11 @@ rerun_cellift_notrace: | generated/timestamps
 	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/rerun_cellift_notrace_start.txt
 	./build/run_cellift_notrace_0.1/default-verilator/Vopenc910_tiny_soc
 	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/rerun_cellift_notrace_end.txt
-.PHONY: rerun_memshade_notrace
-rerun_memshade_notrace: | generated/timestamps
-	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/rerun_memshade_notrace_start.txt
-	./build/run_memshade_notrace_0.1/default-verilator/Vopenc910_tiny_soc
-	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/rerun_memshade_notrace_end.txt
+.PHONY: rerun_hybridift_notrace
+rerun_hybridift_notrace: | generated/timestamps
+	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/rerun_hybridift_notrace_start.txt
+	./build/run_hybridift_notrace_0.1/default-verilator/Vopenc910_tiny_soc
+	date +%Y-%m-%dT%H:%M:%S > generated/timestamps/rerun_hybridift_notrace_end.txt
 
 .PHONY: recompile_vanilla_notrace
 recompile_vanilla_notrace: # generated/out/vanilla.sv
@@ -271,15 +271,15 @@ recompile_cellift_notrace: # generated/out/cellift.sv
 	cp -r $(CELLIFT_DESIGN_PROCESSING_ROOT)/common/dv ./build
 	make -C build/run_cellift_notrace_0.1/default-verilator -j $(OUR_JOBS)
 
-.PHONY: recompile_memshade_notrace
-recompile_memshade_notrace: # generated/out/memshade.sv
-	rm -f build/run_memshade_notrace_0.1/default-verilator/toplevel.o
-	rm -f build/run_memshade_notrace_0.1/default-verilator/$(TOP_EXECUTABLE_NAME)
-	rm -rf build/run_memshade_notrace_0.1/src/run_memshade_0.1/dv
+.PHONY: recompile_hybridift_notrace
+recompile_hybridift_notrace: # generated/out/hybridift.sv
+	rm -f build/run_hybridift_notrace_0.1/default-verilator/toplevel.o
+	rm -f build/run_hybridift_notrace_0.1/default-verilator/$(TOP_EXECUTABLE_NAME)
+	rm -rf build/run_hybridift_notrace_0.1/src/run_hybridift_0.1/dv
 	rm -rf ./build/dv
-	cp -r dv build/run_memshade_notrace_0.1/src/run_memshade_0.1
+	cp -r dv build/run_hybridift_notrace_0.1/src/run_hybridift_0.1
 	cp -r $(CELLIFT_DESIGN_PROCESSING_ROOT)/common/dv ./build
-	make -C build/run_memshade_notrace_0.1/default-verilator -j $(OUR_JOBS)
+	make -C build/run_hybridift_notrace_0.1/default-verilator -j $(OUR_JOBS)
 
 tmp generated/timestamps:
 	mkdir -p $@
@@ -292,10 +292,10 @@ durations_cellift:
 	@echo "Verilator elaboration"
 	$(PYTHON) $(CELLIFT_PYTHON_COMMON)/compute_duration.py generated/timestamps/run_cellift_notrace_start.txt generated/timestamps/run_cellift_notrace_end.txt
 
-.PHONY: durations_memshade
-durations_memshade:
-	@echo "For memshade:"
+.PHONY: durations_hybridift
+durations_hybridift:
+	@echo "For hybridift:"
 	@echo "Build"
-	$(PYTHON) $(CELLIFT_PYTHON_COMMON)/compute_duration.py generated/timestamps/generated_memshade_precompact_start.txt generated/timestamps/generated_memshade_precompact_end.txt
+	$(PYTHON) $(CELLIFT_PYTHON_COMMON)/compute_duration.py generated/timestamps/generated_hybridift_precompact_start.txt generated/timestamps/generated_hybridift_precompact_end.txt
 	@echo "Verilator elaboration"
-	$(PYTHON) $(CELLIFT_PYTHON_COMMON)/compute_duration.py generated/timestamps/run_memshade_notrace_start.txt generated/timestamps/run_memshade_notrace_end.txt
+	$(PYTHON) $(CELLIFT_PYTHON_COMMON)/compute_duration.py generated/timestamps/run_hybridift_notrace_start.txt generated/timestamps/run_hybridift_notrace_end.txt
