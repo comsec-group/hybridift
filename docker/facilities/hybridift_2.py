@@ -63,7 +63,7 @@ class PortRole(Enum):
     COMBINED_ADDRESS_SIGNAL = auto()
     BYTE_ENABLE_SIGNAL = auto()
     WRITE_ENABLE = auto()
-    # READ_ENABLE = auto()
+    READ_ENABLE = auto()
     ENABLE = auto()
     WRITE_MASK = auto()
 ALL_PORT_ROLES = list(PortRole)
@@ -461,8 +461,8 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
             return 1
         elif role == PortRole.ENABLE:
             return 1
-        # elif role == PortRole.READ_ENABLE:
-        #     return 1
+        elif role == PortRole.READ_ENABLE:
+            return 1
         elif role == PortRole.WRITE_MASK:
             return 1
         else:
@@ -481,8 +481,8 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
             return data_width // 8
         elif role == PortRole.WRITE_ENABLE:
             return 1
-        # elif role == PortRole.READ_ENABLE:
-        #     return 1
+        elif role == PortRole.READ_ENABLE:
+            return 1
         elif role == PortRole.ENABLE:
             return 1
         elif role == PortRole.WRITE_MASK:
@@ -511,8 +511,8 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
         PortRole.BYTE_ENABLE_SIGNAL: [0b1111, 0b1111, 0b1111, 0b1111, 0b1111, 0b0000],
         # Write enable
         PortRole.WRITE_ENABLE: [1, 1, 0, 0, 0, 0],
-        # # Read enable
-        # PortRole.READ_ENABLE: [0, 0, 1, 1, 1, 1],
+        # Read enable
+        PortRole.READ_ENABLE: [0, 0, 1, 1, 1, 1],
         # Enable
         PortRole.ENABLE: [1, 1, 1, 1, 1, 1],
         # Write mask

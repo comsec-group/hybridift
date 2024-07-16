@@ -117,7 +117,8 @@ RUN bash -c "source /cellift-meta/env.sh && cd /cellift-cva6/cellift/ && make ge
 
 # Start with CVA6
 # First, pre-instrument the memories. Then, instrument the rest of the design.
-COPY facilities/hybridift_2.py /hybridift.py
+# TODO Remove
+# COPY facilities/hybridift.py /hybridift.py
 
 RUN bash -c "source /cellift-meta/env.sh && python3 /hybridift.py /cellift-cva6/cellift/generated/out/passthrough.sv /cellift-cva6/cellift/generated/hybridift_interm.sv"
 RUN bash -c "source /cellift-meta/env.sh && DECOMPOSE_MEMORY=1 VERILOG_INPUT=/cellift-cva6/cellift/generated/hybridift_interm.sv INSTRUMENTATION=cellift VERILOG_OUTPUT=/cellift-cva6/cellift/generated/out/hybridift.sv TOP_MODULE=ariane_mem_top yosys -c /cellift-meta/design-processing/common/yosys/instrument.ys.tcl -l /cellift-cva6/cellift/generated/out/hybridift.log"
@@ -136,13 +137,17 @@ RUN bash -c "source /cellift-meta/env.sh && cd /cellift-cva6/cellift/ && /root/.
 RUN bash -c "source /cellift-meta/env.sh && cd /openc910/our && cat /openc910/sram_mem_blackbox.sv >> generated/sv2v_out.v && make generated/passthrough_precompact.sv"
 
 # Remove unused modules. Then, instrument the rest of the design.
-RUN bash -c "source /cellift-meta/env.sh && python3 /remove_unused_modules.py /openc910/our/generated/passthrough_precompact.sv /openc910/our/generated/passthrough_precompact_smaller.sv openc910_mem_top && python3 /hybridift.py /openc910/our/generated/passthrough_precompact_smaller.sv /openc910/our/generated/hybridift_interm.sv && DECOMPOSE_MEMORY=1 VERILOG_INPUT=/openc910/our/generated/hybridift_interm.sv INSTRUMENTATION=cellift VERILOG_OUTPUT=/openc910/our/generated/out/hybridift.sv TOP_MODULE=openc910_mem_top yosys -c /cellift-meta/design-processing/common/yosys/instrument.ys.tcl -l /openc910/our/generated/out/hybridift.log"
+RUN bash -c "source /cellift-meta/env.sh && python3 /cellift-meta/design-processing/common/python_scripts/remove_unused_modules.py /openc910/our/generated/passthrough_precompact.sv /openc910/our/generated/passthrough_precompact_smaller.sv openc910_mem_top"
+# TODO Remove
+# COPY facilities/hybridift.py /hybridift.py
+RUN bash -c "source /cellift-meta/env.sh && python3 /hybridift.py  /openc910/our/generated/passthrough_precompact_smaller.sv /openc910/our/generated/hybridift_interm.sv"
+RUN bash -c "source /cellift-meta/env.sh && DECOMPOSE_MEMORY=1 VERILOG_INPUT=/openc910/our/generated/hybridift_interm.sv INSTRUMENTATION=cellift VERILOG_OUTPUT=/openc910/our/generated/out/hybridift.sv TOP_MODULE=openc910_mem_top yosys -c /cellift-meta/design-processing/common/yosys/instrument.ys.tcl -l /openc910/our/generated/out/hybridift.log"
 
 # Some more processing
 RUN bash -c "mv /openc910/our/generated/out/hybridift.sv /openc910/our/generated/hybridift_precompact.sv && sed 's/\$func\$\/cellift-cva6\/cellift\/generated\/hybridift_interm.sv/mypath/g' /openc910/our/generated/hybridift_precompact.sv > /openc910/our/generated/interm.sv && source /cellift-meta/env.sh && cd /openc910/our/ && python3 /cellift-meta/design-processing/common/python_scripts/expand_left_operand.py generated/interm.sv generated/interm.sv && python3 /cellift-meta/design-processing/common/python_scripts/expand_right_operand.py generated/interm.sv generated/interm.sv && python3 /cellift-meta/design-processing/common/python_scripts/compress_concats.py generated/interm.sv generated/interm.sv && python3 /cellift-meta/design-processing/common/python_scripts/divide_concat_into_subconcats.py generated/interm.sv generated/interm.sv && python3 /cellift-meta/design-processing/common/python_scripts/correct_too_wide_lvalues.py generated/interm.sv generated/interm.sv && cd /openc910/our/ && sed 's/assign xx_intc_vld/\/\/assign xx_intc_vld/g' generated/interm.sv > generated/out/hybridift.sv"
 
 # # TODO Remove this eventually
-# COPY facilities/openc910/replace_unwanted_t0s.py /replace_unwanted_t0s.py
+COPY facilities/openc910/replace_unwanted_t0s.py /replace_unwanted_t0s.py
 
 RUN bash -c "source /cellift-meta/env.sh && cd /openc910/our/ && python3 /replace_unwanted_t0s.py generated/out/hybridift.sv generated/out/hybridift.sv && /root/.local/bin/fusesoc library add run_hybridift_notrace . && /root/.local/bin/fusesoc run --build run_hybridift_notrace"
 # This command below will naturally fail because a SIMSRAMELF argument must be provided (see CellIFT tooling). But it compiles and allows fast prototyping once compiling, which is the goal.
@@ -159,8 +164,38 @@ COPY facilities/rocket/annotate_chipyard_mems.py /annotate_chipyard_mems.py
 RUN bash -c "source /cellift-meta/env.sh && python3 /annotate_chipyard_mems.py /cellift-chipyard/cellift-rocket/generated/out/passthrough_precompact.sv /cellift-chipyard/cellift-rocket/generated/passthrough_precompact_annotated.sv && python3 /annotate_chipyard_mems.py /cellift-chipyard/cellift-boom/generated/out/passthrough_precompact.sv /cellift-chipyard/cellift-boom/generated/passthrough_precompact_annotated.sv"
 
 # Hybridift-ize
-RUN bash -c "source /cellift-meta/env.sh && cd /cellift-chipyard/cellift-rocket && python3 /hybridift.py generated/out/passthrough_precompact.sv generated/hybridift_interm.sv --annotations && cd /cellift-chipyard/cellift-boom && python3 /hybridift.py generated/out/passthrough_precompact.sv generated/hybridift_interm.sv --annotations"
+COPY facilities/hybridift_a2.py /hybridift.py
+# RUN bash -c "source /cellift-meta/env.sh && cd /cellift-chipyard/cellift-rocket && python3 /hybridift.py generated/passthrough_precompact_annotated.sv generated/hybridift_interm.sv --annotations && cd /cellift-chipyard/cellift-boom && python3 /hybridift.py generated/passthrough_precompact_annotated.sv generated/hybridift_interm.sv --annotations"
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-chipyard/cellift-rocket && python3 /hybridift.py generated/passthrough_precompact_annotated.sv generated/hybridift_interm.sv --annotations"
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-chipyard/cellift-boom && python3 /hybridift.py generated/passthrough_precompact_annotated.sv generated/hybridift_interm.sv --annotations"
 
-RUN bash -c "source /cellift-meta/env.sh && echo TODO Continuer ici"
+# CellIFT-ize the non-memory parts of the design
+RUN bash -c "source /cellift-meta/env.sh && DECOMPOSE_MEMORY=1 VERILOG_INPUT=/cellift-chipyard/cellift-rocket/generated/hybridift_interm.sv INSTRUMENTATION=cellift VERILOG_OUTPUT=/cellift-chipyard/cellift-rocket/generated/out/hybridift.sv TOP_MODULE=rocket_mem_top yosys -c /cellift-meta/design-processing/common/yosys/instrument.ys.tcl -l /cellift-chipyard/cellift-rocket/generated/hybridift.log"
+
+RUN bash -c "mv /cellift-chipyard/cellift-rocket/generated/out/hybridift.sv /cellift-chipyard/cellift-rocket/generated/hybridift_precompact.sv && sed 's/\$func\$\/cellift-cva6\/cellift\/generated\/hybridift_interm.sv/mypath/g' /cellift-chipyard/cellift-rocket/generated/hybridift_precompact.sv > /cellift-chipyard/cellift-rocket/generated/interm.sv && source /cellift-meta/env.sh && cd /cellift-chipyard/cellift-rocket/ && python3 /cellift-meta/design-processing/common/python_scripts/expand_left_operand.py generated/interm.sv generated/interm.sv && python3 /cellift-meta/design-processing/common/python_scripts/expand_right_operand.py generated/interm.sv generated/interm.sv && python3 /cellift-meta/design-processing/common/python_scripts/compress_concats.py generated/interm.sv generated/interm.sv && python3 /cellift-meta/design-processing/common/python_scripts/divide_concat_into_subconcats.py generated/interm.sv generated/interm.sv && python3 /cellift-meta/design-processing/common/python_scripts/correct_too_wide_lvalues.py generated/interm.sv generated/interm.sv && cd /cellift-chipyard/cellift-rocket/ && sed 's/assign xx_intc_vld/\/\/assign xx_intc_vld/g' generated/interm.sv > generated/out/hybridift.sv"
+
+
+# Replace unwanted t0's
+COPY facilities/replace_unwanted_t0s_2.py /replace_unwanted_t0s.py
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-chipyard/cellift-rocket/ && python3 /replace_unwanted_t0s.py generated/out/hybridift.sv generated/out/hybridift.sv"
+
+COPY facilities/rocket/run_hybridift_notrace.core /cellift-chipyard/cellift-rocket/run_hybridift_notrace.core
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-chipyard/cellift-rocket/ && /root/.local/bin/fusesoc library add run_hybridift_notrace . && /root/.local/bin/fusesoc run --build run_hybridift_notrace && cd /cellift-chipyard/cellift-rocket/build/run_hybridift_notrace_0.1/default-verilator/"
+
+# BOOM
+RUN bash -c "source /cellift-meta/env.sh && DECOMPOSE_MEMORY=1 VERILOG_INPUT=/cellift-chipyard/cellift-boom/generated/hybridift_interm.sv INSTRUMENTATION=cellift VERILOG_OUTPUT=/cellift-chipyard/cellift-boom/generated/out/hybridift.sv TOP_MODULE=boom_mem_top yosys -c /cellift-meta/design-processing/common/yosys/instrument.ys.tcl -l /cellift-chipyard/cellift-boom/generated/hybridift.log"
+RUN bash -c "mv /cellift-chipyard/cellift-boom/generated/out/hybridift.sv /cellift-chipyard/cellift-boom/generated/hybridift_precompact.sv && sed 's/\$func\$\/cellift-cva6\/cellift\/generated\/hybridift_interm.sv/mypath/g' /cellift-chipyard/cellift-boom/generated/hybridift_precompact.sv > /cellift-chipyard/cellift-boom/generated/interm.sv && source /cellift-meta/env.sh && cd /cellift-chipyard/cellift-boom/ && python3 /cellift-meta/design-processing/common/python_scripts/expand_left_operand.py generated/interm.sv generated/interm.sv && python3 /cellift-meta/design-processing/common/python_scripts/expand_right_operand.py generated/interm.sv generated/interm.sv && python3 /cellift-meta/design-processing/common/python_scripts/compress_concats.py generated/interm.sv generated/interm.sv && python3 /cellift-meta/design-processing/common/python_scripts/divide_concat_into_subconcats.py generated/interm.sv generated/interm.sv && python3 /cellift-meta/design-processing/common/python_scripts/correct_too_wide_lvalues.py generated/interm.sv generated/interm.sv && cd /cellift-chipyard/cellift-boom/ && sed 's/assign xx_intc_vld/\/\/assign xx_intc_vld/g' generated/interm.sv > generated/out/hybridift.sv"
+RUN bash -c "source /cellift-meta/env.sh && cd /cellift-chipyard/cellift-boom/ && python3 /replace_unwanted_t0s.py generated/out/hybridift.sv generated/out/hybridift.sv"
+RUN bash -c "cp /cellift-chipyard/cellift-rocket/run_hybridift_notrace.core /cellift-chipyard/cellift-boom/run_hybridift_notrace.core && source /cellift-meta/env.sh && cd /cellift-chipyard/cellift-boom/ && /root/.local/bin/fusesoc library add run_hybridift_notrace . && /root/.local/bin/fusesoc run --build run_hybridift_notrace && cd /cellift-chipyard/cellift-boom/build/run_hybridift_notrace_0.1/default-verilator/"
+
+
+
+
+# # TODO " && SIMLEN=1000 ./Vtop_tiny_soc; echo ok"
+
+
+# RUN bash -c "source /cellift-meta/env.sh && cd /cellift-chipyard/cellift-boom && python3 /hybridift.py generated/passthrough_precompact_annotated.sv generated/hybridift_interm.sv --annotations"
+
+# RUN bash -c "source /cellift-meta/env.sh && echo TODO Continuer ici"
 
 
