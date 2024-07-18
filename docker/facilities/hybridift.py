@@ -37,25 +37,6 @@ NUM_PROCESSES_FOR_BUILD = 32
 TAINT_META_RESET_PORT_NAME_PREFIX = "taint_meta_reset"
 CELLIFT_NOINSTRUMENT_ATTR = "cellift_noinstrument"
 
-# MODULE_NAME = "cva6_sram"
-# MODULE_NAME = "rocket_l2tlb_ram"
-# MODULE_NAME = "rocket_tag_array_0"
-# MODULE_NAME = "rocket_tag_array"
-# MODULE_NAME = "rocket_data_arrays_0"
-# MODULE_NAME = "rocket_data_arrays_0_0"
-# MODULE_NAME = "boom_split_array_0_0"
-
-# For the widths of the signals, we rely on the post-yosys vanilla, where parameters are well-known.
-
-# # We form a dict of clock signal, reset signal, input signals and output signals
-# def identify_clock_and_reset_signal(module_content_post_sv2v_lines):
-#     reset_signals = set()
-#     for line in module_content_post_sv2v_lines:
-#         if "negedge" in line:
-#             reset_signals.add(re.search(r"negedge (\w+)", line).group(1))
-#     assert len(reset_signals) <= 1, "There is expected to be exactly one reset signal"
-#     return reset_signals.pop() if reset_signals else None
-
 def __signal_to_taint_signal_name(signal_name: str):
     return f"{signal_name}_t0"
 
@@ -66,9 +47,10 @@ class PortRole(Enum):
     COMBINED_ADDRESS_SIGNAL = auto()
     BYTE_ENABLE_SIGNAL = auto()
     WRITE_ENABLE = auto()
-    # READ_ENABLE = auto()
+    READ_ENABLE = auto()
     ENABLE = auto()
     WRITE_MASK = auto()
+    WRITE_MODE = auto()
 ALL_PORT_ROLES = list(PortRole)
 
 def __run_input_sequence(module_name, input_seq_id, input_seq):
@@ -465,9 +447,11 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
                 return 1
             elif role == PortRole.ENABLE:
                 return 1
-            # elif role == PortRole.READ_ENABLE:
-            #     return 1
+            elif role == PortRole.READ_ENABLE:
+                return 1
             elif role == PortRole.WRITE_MASK:
+                return 1
+            elif role == PortRole.WRITE_MODE:
                 return 1
             else:
                 raise NotImplementedError(f"Role {role} not yet implemented")
@@ -485,11 +469,13 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
                 return data_width // 8
             elif role == PortRole.WRITE_ENABLE:
                 return 1
-            # elif role == PortRole.READ_ENABLE:
-            #     return 1
+            elif role == PortRole.READ_ENABLE:
+                return 1
             elif role == PortRole.ENABLE:
                 return 1
             elif role == PortRole.WRITE_MASK:
+                return 1
+            elif role == PortRole.WRITE_MODE:
                 return 1
             else:
                 raise NotImplementedError(f"Role {role} not yet implemented")
@@ -515,12 +501,14 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
             PortRole.BYTE_ENABLE_SIGNAL: [0b1111, 0b1111, 0b1111, 0b1111, 0b1111, 0b0000],
             # Write enable
             PortRole.WRITE_ENABLE: [1, 1, 0, 0, 0, 0],
-            # # Read enable
-            # PortRole.READ_ENABLE: [0, 0, 1, 1, 1, 1],
             # Enable
             PortRole.ENABLE: [1, 1, 1, 1, 1, 1],
             # Write mask
-            PortRole.WRITE_MASK: [0b1, 0b1, 0b1, 0b1, 0b1, 0b0]
+            PortRole.WRITE_MASK: [0b1, 0b1, 0b1, 0b1, 0b1, 0b0],
+            # Read enable
+            PortRole.READ_ENABLE: [0, 0, 1, 1, 1, 1],
+            # TODO Future: Improve read enable and write mode. This will probably require adding some stimuli (this will cause much difference in performance)
+            PortRole.WRITE_MODE: [1, 1, 0, 0, 0, 0],
         }
         # Ensure that all lengths match
         assert len(set([len(sequence) for sequence in role_sequences.values()])) == 1, "All sequences should have the same length"
@@ -551,17 +539,6 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
 
             return sequence
 
-            # for input_signal_id in range(num_input_signals):
-            #     # Wait some cycles.
-            #     for wait_cycle_id in range(4):
-            #         sequence.append([0 for _ in range(num_input_signals)])
-
-            #     # Write first memcell.
-            #     new_input_vector = [0 for _ in range(num_input_signals)]
-
-            # Wait some cycles.
-
-
         # Generate the candidate mappings from the inputs to the roles.
         all_roles = ALL_PORT_ROLES
         if not byte_enable_candidate_signal_names:
@@ -571,13 +548,6 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
         all_candidate_roles_of_inputs = []
         for candidate_roles in all_candidate_roles_of_inputs_ordered:
             all_candidate_roles_of_inputs.extend(permutations(candidate_roles))
-
-                # print(f"Candidate assignment {candidate_assignment_id}: {candidate_assignment}")
-        # PortRole.INPUT_DATA, PortRole.BYTE_ENABLE_SIGNAL, PortRole.COMBINED_ADDRESS_SIGNAL, PortRole.ENABLE, PortRole.WRITE_ENABLE
-        # print(f"len(ordered_signal_inputs_and_widths): {len(ordered_signal_inputs_and_widths)}")
-        # print("all_candidate_roles_of_inputs")
-        # for candidate_roles in all_candidate_roles_of_inputs:
-        #     print(f"    candidate_roles: {candidate_roles}")
 
         # Filter out all candidate roles
         def filter_candidate_roles(candidate_role_assignments):
@@ -637,12 +607,7 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
             print(f"No candidate roles were found for module {module_name}. Skipping this module and assuming it is not a memory.")
             return
 
-        # print(f"curr_candidate_roles: {curr_candidate_roles}")
-        # print(f"len(curr_candidate_roles): {len(curr_candidate_roles)}")
-
         curr_candidate_roles = list(curr_candidate_roles)
-
-        print(f"len(curr_candidate_roles): {len(curr_candidate_roles)}")
 
         all_input_seqs = []
         for curr_candidate_role_assignment in curr_candidate_roles:
@@ -651,26 +616,6 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
         assert all_input_seqs, f"No input sequences were generated for module {module_name}"
 
         # all_candidate_combinations = permutations(range(1, num_input_signals), num_input_signals)
-
-        # # TODO Generate the inputs for all sequences
-        # all_input_seqs = []
-        # for curr_combination in all_combinations:
-        #     num_not_none_indices = len([a for a in curr_combination if a is not None])
-        #     # Condition on num_input_signals to discriminate the presence of a multi-bit byte enable signal
-        #     if num_not_none_indices == 5:
-        #         input_seq = gen_input_sequence_assuming_positions(
-        #             num_not_none_indices,
-        #             *[a for a in curr_combination if a is not None]
-        #         )
-        #     elif num_not_none_indices == 4:
-        #         input_seq = gen_input_sequence_assuming_positions(
-        #             num_not_none_indices,
-        #             *curr_combination
-        #         )
-        #     else:
-        #         raise NotImplementedError(f"Number of input signals not yet implemented: {num_not_none_indices}")
-
-        #     all_input_seqs.append(input_seq)
 
         ############################
         # Execute the Verilator model
@@ -738,13 +683,23 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
         del candidate_roles_found_prefilter
         print(f"input signal names: {ordered_signal_inputs_and_widths}")
         print("roles:", '\n'.join(list(map(str, roles))))
+
+        # If the difference is exactly write enable vs. write mode, just say it is write enable as this should not matter.
+        if len(roles) == 2:
+            assert len(roles[0]) == len(roles[1]), "The two roles should have the same length"
+            # roles[0], roles[1] = zip(*sorted(zip(roles[0], roles[1])))
+            diff_positions = [idx for idx in range(len(roles[0])) if roles[0][idx] != roles[1][idx]]
+            if len(diff_positions) == 1:
+                if roles[0][diff_positions[0]] == PortRole.WRITE_ENABLE and roles[1][diff_positions[0]] == PortRole.WRITE_MODE or roles[0][diff_positions[0]] == PortRole.WRITE_MODE and roles[1][diff_positions[0]] == PortRole.WRITE_ENABLE:
+                    roles = [roles[0]]
+
         assert len(roles) == 1, f"There should be exactly one set of roles found, but got {len(roles)}"
         roles = roles[0]
 
         clocks = signal_dict['clock_signals']
         output_signal_and_width = signal_dict['output_signal_and_width']
 
-    else: # i.e., if there are manual annotations
+    else: # i.e., if is_manual_annotation
         assert module_annotations is not None, "The module annotations should be provided if there are manual annotations"
 
         roles = []
@@ -769,6 +724,9 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
             elif annotation[1] == "BYTE_ENABLE_SIGNAL":
                 ordered_signal_inputs_and_widths.append((annotation[0], annotation[2]))
                 roles.append(PortRole.BYTE_ENABLE_SIGNAL)
+            elif annotation[1] == "READ_ENABLE":
+                ordered_signal_inputs_and_widths.append((annotation[0], annotation[2]))
+                roles.append(PortRole.READ_ENABLE)
             elif annotation[1] == "WRITE_ENABLE":
                 ordered_signal_inputs_and_widths.append((annotation[0], annotation[2]))
                 roles.append(PortRole.WRITE_ENABLE)
@@ -778,6 +736,9 @@ def __analyze_sram_roles_and_latency(module_name: str, module_content_post_yosys
             elif annotation[1] == "WRITE_MASK":
                 ordered_signal_inputs_and_widths.append((annotation[0], annotation[2]))
                 roles.append(PortRole.WRITE_MASK)
+            elif annotation[1] == "WRITE_MODE":
+                ordered_signal_inputs_and_widths.append((annotation[0], annotation[2]))
+                roles.append(PortRole.WRITE_MODE)
             elif annotation[1] == "CLOCK":
                 clocks.append(annotation[0])
             elif annotation[0] == "hybridift_latency":
@@ -863,18 +824,23 @@ def __do_instrument_memory_explicit(role_dict, clock_signal, metareset_name):
     #     new_lines.append(f"         if ({role_dict[PortRole.ENABLE][0]}) begin")
     if PortRole.WRITE_MASK in role_dict:
         new_lines.append(f"         if ({role_dict[PortRole.WRITE_MASK][0]}) begin")
+    # TODO Double-check the effect of the wmode.
+    if PortRole.WRITE_MODE in role_dict:
+        new_lines.append(f"         if ({role_dict[PortRole.WRITE_MODE][0]}) begin")
 
     # Ignore the byte enable signal for now
     new_lines.append(f"         taint_mem[{write_addr_signal_name}] <= {__signal_to_taint_signal_name(role_dict[PortRole.INPUT_DATA][0])};")
 
     if PortRole.WRITE_ENABLE in role_dict:
-        new_lines.append(f"    end")
+        new_lines.append(f"    end // end of wen")
     if PortRole.WRITE_ENABLE not in role_dict and PortRole.ENABLE in role_dict:
-        new_lines.append(f"    end")
+        new_lines.append(f"    end // end of enable and not wen")
     # elif PortRole.ENABLE in role_dict:
     #     new_lines.append(f"    end")
-    elif PortRole.WRITE_MASK in role_dict:
-        new_lines.append(f"    end")
+    if PortRole.WRITE_MASK in role_dict:
+        new_lines.append(f"    end // end of wmask")
+    if PortRole.WRITE_MODE in role_dict:
+        new_lines.append(f"    end // end of wmode")
 
     new_lines.append(f"    end // end of the non-reset block")
     new_lines.append(f"    end // end of the always_ff block")
@@ -1232,6 +1198,16 @@ def __list_module_contents(sv_content):
         # Remove empty lines
         content_lines = [line for line in content_lines if line.strip().replace('\n', '') != ""]
 
+        # Make sure that the first line contains the whole module declaration
+        num_lines_in_first_line = 1
+        first_line = content_lines[0]
+        while not ');' in first_line:
+            first_line += content_lines[num_lines_in_first_line]
+            num_lines_in_first_line += 1
+        first_line.split()
+        assert first_line[-2:] == ");", f"The module declaration line should end with `);`"
+        content_lines = [first_line] + content_lines[num_lines_in_first_line:]
+
         # Remove functions
         line_ids_to_remove = []
         currently_in_function = False
@@ -1253,6 +1229,7 @@ def __list_module_contents(sv_content):
         curr_module_annotations = []
         # Check for the annotations
         for candidate_annotation_id in range(1, len(content_lines)):
+            # print(f"Checking line {candidate_annotation_id}: {content_lines[candidate_annotation_id]}")
             if content_lines[candidate_annotation_id].startswith("// @hybridift "):
                 annotation_whole_str = content_lines[candidate_annotation_id][len("// @hybridift "):]
                 signal_name, role_str = list(map(lambda s: s.strip(), annotation_whole_str.split(":")))
@@ -1267,9 +1244,8 @@ def __list_module_contents(sv_content):
                 else:
                     # The latency is a special case where the width is not interesting, and we put the latency in the role slot.
                     if not content_lines[candidate_annotation_id].startswith("// @hybridift hybridift_latency:"):
-                        raise ValueError(f"Could not find the signal width for annotated signal `{content_lines[candidate_annotation_id]}`")
+                        raise ValueError(f"Could not find the signal width for annotated signal `{content_lines[candidate_annotation_id]}` for module {content_lines[0].split(' ')[1].split('(')[0]}")
                     signal_width = None
-
                 curr_module_annotations.append((signal_name, role_str, signal_width))
             else:
                 break
@@ -1354,6 +1330,7 @@ def __module_instrumentation_worker(module_name, module_content, module_annotati
 
 def instrument_all_memories_in_design(sv_content):
     all_module_contents, all_module_contents_incl_functions, module_annotations = __list_module_contents(sv_content)
+    print(f"Module annotations: {module_annotations}")
     all_module_names = [__get_module_name_from_content(module_content) for module_content in all_module_contents]
     if not is_manual_annotation:
         assert not any(module_annotations), "Unexpected hybridift annotations in the design when in fully automatic mode"
@@ -1402,11 +1379,12 @@ if __name__ == '__main__':
 
     if len(sys.argv) > 3:
         is_manual_annotation = sys.argv[3] == "--annotations"
-
+    
     with open(input_sv_path, "r") as f:
         sv_content = '\n\n'+f.read()
 
     sv_content = instrument_all_memories_in_design(sv_content)
 
+    print(f"Writing to {output_sv_path}")
     with open(output_sv_path, "w") as f:
         f.write(sv_content)

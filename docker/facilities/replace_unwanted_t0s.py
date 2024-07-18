@@ -1,4 +1,8 @@
-# Replaces all instances of unwanted taint wires
+# Copyright 2024 Flavien Solt, ETH Zurich.
+# Licensed under the General Public License, Version 3.0, see LICENSE for details.
+# SPDX-License-Identifier: GPL-3.0-only
+
+# Replaces instances of unwanted taint wires to avoid unhappy tools.
 
 import re
 import sys

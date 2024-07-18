@@ -1,4 +1,4 @@
-# Copyright 2022 Flavien Solt, ETH Zurich.
+# Copyright 2024 Flavien Solt, ETH Zurich.
 # Licensed under the General Public License, Version 3.0, see LICENSE for details.
 # SPDX-License-Identifier: GPL-3.0-only
 
@@ -21,8 +21,6 @@ FORBIDDEN_CHARACTERS = r"+-*/=<>{}"
 # @param curr_line_number the line number corresponding to this bracket.
 def get_bracket_bit_width(bracket_content, all_lines, curr_line_number):
     global num_brackets_treated
-    # Cache to accelerate signal lookups in case (c).
-    bracket_signal_cache = dict()
 
     # Quickly check that there is no nested expression or concatenation.
     for forbidden_character in FORBIDDEN_CHARACTERS:
