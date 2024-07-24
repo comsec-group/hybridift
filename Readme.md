@@ -1,4 +1,4 @@
-# Example experimental implementation for paper for HybriDIFT: Scalable Memory-Aware Dynamic Information Flow Tracking for Hardware
+# Example experimental implementation for HybriDIFT: Scalable Memory-Aware Dynamic Information Flow Tracking for Hardware (ICCAD'24)
 
 Welcome to an experimental implementation of HybriDIFT!
 Disclaimer: there might be imperfections, issues or incompletenesses.
