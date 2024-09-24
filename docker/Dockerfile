@@ -81,6 +81,7 @@ RUN bash -c "source /cellift-meta/env.sh && git clone https://github.com/comsec-
 ############################
 # OpenC910 preparation
 ############################
+RUN bash -c "cd facilities/openc910 && rm openc910.tgz && source import.sh"
 
 COPY facilities/openc910/openc910.tgz /openc910.tgz
 # Untar OpenC910 and make it
@@ -120,7 +121,6 @@ RUN bash -c "source /cellift-meta/env.sh && cd /cellift-cva6/cellift/ && /root/.
 
 # Openc910
 
-RUN bash -c "cd openc910 && rm openc910.tgz && source import.sh"
 # sed -i 's/.database./.get_database()./g' passes/cellift/cellift.cc && make -j 220"
 RUN bash -c "source /cellift-meta/env.sh && cd /openc910/our && cat /openc910/sram_mem_blackbox.sv >> generated/sv2v_out.v && make generated/passthrough_precompact.sv"
 
