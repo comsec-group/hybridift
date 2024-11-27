@@ -123,7 +123,7 @@ assign Q[WRAP_WIDTH-1:0]               = ram_dout[WRAP_WIDTH-1:0];
 sram_mem #(WRAP_WIDTH,1<<ADDR_WIDTH) i_sram_mem (
   .clk_i(CLK),
   .rst_ni(1'b1),
-  .req_i(1'b1),
+  .req_i(~CEN),
   .write_i(|ram_wen_bitwise),
   .addr_i(addr),
   .wdata_i(ram_din),

@@ -82,14 +82,7 @@ RUN bash -c "source /cellift-meta/env.sh && git clone https://github.com/comsec-
 # OpenC910 preparation
 ############################
 
-COPY facilities/openc910/openc910.tgz /openc910.tgz
-# Untar OpenC910 and make it
-RUN bash -c "source /cellift-meta/env.sh && tar -xzf openc910.tgz && cd /openc910/our && make generated/out/vanilla.sv"
-
-# RUN bash -c "source /cellift-meta/env.sh && rm -rf cellift-yosys && git clone https://github.com/comsec-group/cellift-yosys.git --recursive && cd /cellift-yosys && make config-gcc && make -j 220"
-
-# Passthrough precompact
-RUN bash -c "sed -i 's/yosys list_state_elements/ yosys timestamp list_state_elements_dummy/g' /cellift-meta/design-processing/common/yosys/instrument.ys.tcl && source /cellift-meta/env.sh && cd /openc910/our && make generated/passthrough_precompact.sv"
+RUN bash -c "source /cellift-meta/env.sh && git clone https://github.com/TobiasKovats/hybridift-openc910.git && cd /hybridift-openc910/hybridift && make generated/out/cellift.sv"
 
 ############################
 # HybriDIFT
@@ -121,21 +114,7 @@ RUN bash -c "source /cellift-meta/env.sh && cd /cellift-cva6/cellift/ && /root/.
 # Openc910
 
 # sed -i 's/.database./.get_database()./g' passes/cellift/cellift.cc && make -j 220"
-RUN bash -c "source /cellift-meta/env.sh && cd /openc910/our && cat /openc910/sram_mem_blackbox.sv >> generated/sv2v_out.v && make generated/passthrough_precompact.sv"
-
-# Remove unused modules. Then, instrument the rest of the design.
-RUN bash -c "source /cellift-meta/env.sh && python3 /cellift-meta/design-processing/common/python_scripts/remove_unused_modules.py /openc910/our/generated/passthrough_precompact.sv /openc910/our/generated/passthrough_precompact_smaller.sv openc910_mem_top"
-RUN bash -c "source /cellift-meta/env.sh && python3 /hybridift.py  /openc910/our/generated/passthrough_precompact_smaller.sv /openc910/our/generated/hybridift_interm.sv"
-RUN bash -c "source /cellift-meta/env.sh && DECOMPOSE_MEMORY=1 VERILOG_INPUT=/openc910/our/generated/hybridift_interm.sv INSTRUMENTATION=cellift VERILOG_OUTPUT=/openc910/our/generated/out/hybridift.sv TOP_MODULE=openc910_mem_top yosys -c /cellift-meta/design-processing/common/yosys/instrument.ys.tcl -l /openc910/our/generated/out/hybridift.log"
-
-# Some more processing
-RUN bash -c "mv /openc910/our/generated/out/hybridift.sv /openc910/our/generated/hybridift_precompact.sv && sed 's/\$func\$\/cellift-cva6\/cellift\/generated\/hybridift_interm.sv/mypath/g' /openc910/our/generated/hybridift_precompact.sv > /openc910/our/generated/interm.sv && source /cellift-meta/env.sh && cd /openc910/our/ && python3 /cellift-meta/design-processing/common/python_scripts/expand_left_operand.py generated/interm.sv generated/interm.sv && python3 /cellift-meta/design-processing/common/python_scripts/expand_right_operand.py generated/interm.sv generated/interm.sv && python3 /cellift-meta/design-processing/common/python_scripts/compress_concats.py generated/interm.sv generated/interm.sv && python3 /cellift-meta/design-processing/common/python_scripts/divide_concat_into_subconcats.py generated/interm.sv generated/interm.sv && python3 /cellift-meta/design-processing/common/python_scripts/correct_too_wide_lvalues.py generated/interm.sv generated/interm.sv && cd /openc910/our/ && sed 's/assign xx_intc_vld/\/\/assign xx_intc_vld/g' generated/interm.sv > generated/out/hybridift.sv"
-
-# Remove some unwanted signals to avoid unhappy tools.
-COPY facilities/replace_unwanted_t0s.py /replace_unwanted_t0s.py
-RUN bash -c "source /cellift-meta/env.sh && cd /openc910/our/ && python3 /replace_unwanted_t0s.py generated/out/hybridift.sv generated/out/hybridift.sv && /root/.local/bin/fusesoc library add run_hybridift_notrace . && /root/.local/bin/fusesoc run --build run_hybridift_notrace"
-# This command below will naturally fail because a SIMSRAMELF argument must be provided (see CellIFT tooling). But it compiles and allows fast prototyping once compiling, which is the goal.
-RUN bash -c "source /cellift-meta/env.sh && cd /openc910/our/build/run_hybridift_notrace_0.1/default-verilator/ && SIMLEN=1000 ./Vopenc910_tiny_soc; echo ok"
+RUN bash -c "source /cellift-meta/env.sh && cd /hybridift-openc910/hybridift && make run_hybridift_notrace; echo ok"
 
 # Rocket and BOOM
 

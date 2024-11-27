@@ -236,9 +236,14 @@ wire             pmu_cpu_save   ;
 wire             pmu_cpu_restore; 
 `endif
 
+  assign araddr_s0       = fifo_pad_araddr;
+  assign arburst_s0      = fifo_pad_arburst;
+  assign arcache_s0      = fifo_pad_arcache;
+  assign arid_s0         = fifo_pad_arid;
   assign arlen_s0        = fifo_pad_arlen;
   assign arprot_s0       = fifo_pad_arprot;
   assign arsize_s0       = fifo_pad_arsize;
+
   assign awaddr_s0       = biu_pad_awaddr;
   assign awburst_s0      = biu_pad_awburst;
   assign awcache_s0      = biu_pad_awcache;
@@ -246,6 +251,7 @@ wire             pmu_cpu_restore;
   assign awlen_s0        = biu_pad_awlen;
   assign awprot_s0       = biu_pad_awprot;
   assign awsize_s0       = biu_pad_awsize;
+  
   assign pll_core_cpuclk = per_clk;
   assign wdata_s0        = biu_pad_wdata;
   assign wid_s0          = biu_pad_wid;
